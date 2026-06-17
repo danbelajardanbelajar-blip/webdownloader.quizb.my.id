@@ -8,24 +8,34 @@ $extractedLinks = [];
 // Ambil Kategori Langsung dari Database Maktabah
 $maktabahCategories = [];
 try {
-    $dbConfigPath = __DIR__ . '/../maktabah.quizb.my.id/app/Config/Database.php';
-    if (file_exists($dbConfigPath)) {
-        require_once $dbConfigPath;
-        $pdo = \App\Config\Database::getConnection();
-        $stmt = $pdo->query("SELECT * FROM categories ORDER BY catord ASC, name ASC");
-        $allCats = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        foreach ($allCats as $cat) {
-            $lvl = isset($cat['lvl']) ? (int)$cat['lvl'] : (isset($cat['level']) ? (int)$cat['level'] : 0);
-            $prefix = str_repeat('-- ', $lvl);
-            $maktabahCategories[] = [
-                'id' => $cat['id'],
-                'name' => $prefix . $cat['name']
-            ];
-        }
+    $host = 'localhost';
+    $db   = 'quic1934_maktabah';
+    $user = 'quic1934_zenhkm';
+    $pass = '03Maret1990';
+    $charset = 'utf8mb4';
+
+    $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+    $options = [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ];
+    
+    $pdo = new PDO($dsn, $user, $pass, $options);
+    $stmt = $pdo->query("SELECT * FROM categories ORDER BY catord ASC, name ASC");
+    $allCats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($allCats as $cat) {
+        $lvl = isset($cat['lvl']) ? (int)$cat['lvl'] : (isset($cat['level']) ? (int)$cat['level'] : 0);
+        $prefix = str_repeat('-- ', $lvl);
+        $maktabahCategories[] = [
+            'id' => $cat['id'],
+            'name' => $prefix . $cat['name']
+        ];
     }
 } catch (Exception $e) {
-    // Abaikan jika error
+    // Tampilkan pesan error di console
+    echo "<script>console.error('DB Error: " . addslashes($e->getMessage()) . "');</script>";
 }
 
 // Fungsi bantuan untuk Absolute URL
