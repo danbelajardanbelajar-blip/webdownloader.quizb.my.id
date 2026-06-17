@@ -142,8 +142,8 @@ if (!empty($_GET['download'])) {
 // ---------------------------------------------------------
 // FASE 3: PROSES IMPORT KE MAKTABAH
 // ---------------------------------------------------------
-if (!empty($_GET['import'])) {
-    $url = filter_var($_GET['import'], FILTER_SANITIZE_URL);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['import_url'])) {
+    $url = filter_var($_POST['import_url'], FILTER_SANITIZE_URL);
     $html = @file_get_contents($url);
     
     if ($html) {
@@ -208,9 +208,9 @@ if (!empty($_GET['import'])) {
             if (!empty($pages)) {
                 $apiUrl = 'https://maktabah.quizb.my.id/api.php?action=admin_import_book';
                 $payload = [
-                    'title' => $documentTitle,
-                    'author' => 'WebDownloader',
-                    'category_id' => 0,
+                    'title' => !empty($_POST['import_title']) ? trim($_POST['import_title']) : $documentTitle,
+                    'author' => !empty($_POST['import_author']) ? trim($_POST['import_author']) : 'WebDownloader',
+                    'category_id' => !empty($_POST['import_category_id']) ? (int)$_POST['import_category_id'] : 0,
                     'iso' => 'ar',
                     'pages' => $pages
                 ];
@@ -354,6 +354,19 @@ if (!empty($_GET['url'])) {
         .badge-import:hover { background: #7c3aed; }
         .category-text { color: #f59e0b; }
         .post-text { color: #10b981; }
+        
+        /* Modal Styles */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        .modal { background: white; padding: 2rem; border-radius: 8px; width: 100%; max-width: 500px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        .modal h3 { margin-top: 0; color: #1e3a8a; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem; }
+        .form-group input, .form-group select { width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 4px; box-sizing: border-box; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 1.5rem; }
+        .btn-cancel { background: #e5e7eb; color: #374151; padding: 0.75rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-cancel:hover { background: #d1d5db; }
+        .btn-submit { background: #8b5cf6; color: white; padding: 0.75rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-submit:hover { background: #7c3aed; }
     </style>
 </head>
 <body>
@@ -395,7 +408,7 @@ if (!empty($_GET['url'])) {
                             <?php endif; ?>
                             
                             <?php if(!$item['is_category']): ?>
-                                <a href="?import=<?= urlencode($item['url']) ?>" class="badge badge-import">Import ke Maktabah</a>
+                                <button type="button" onclick="openImportModal('<?= htmlspecialchars(addslashes($item['url'])) ?>', '<?= htmlspecialchars(addslashes($item['title'])) ?>')" class="badge badge-import" style="border:none; cursor:pointer;">Import ke Maktabah</button>
                                 <a href="?download=<?= urlencode($item['url']) ?>" class="badge badge-download" target="_blank">Unduh DOCX</a>
                             <?php endif; ?>
                         </div>
@@ -404,5 +417,78 @@ if (!empty($_GET['url'])) {
             </ul>
         <?php endif; ?>
     </div>
+
+    <!-- Modal Import -->
+    <div id="importModal" class="modal-overlay">
+        <div class="modal">
+            <h3>Konfirmasi Import ke Maktabah</h3>
+            <form method="POST" action="">
+                <input type="hidden" name="import_url" id="import_url">
+                
+                <div class="form-group">
+                    <label for="import_title">Judul Kitab / Artikel</label>
+                    <input type="text" name="import_title" id="import_title" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="import_author">Penulis</label>
+                    <input type="text" name="import_author" id="import_author" value="WebDownloader" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="import_category_id">Kategori</label>
+                    <select name="import_category_id" id="import_category_id">
+                        <option value="0">-- Pilih Kategori --</option>
+                    </select>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn-cancel" onclick="closeImportModal()">Batal</button>
+                    <button type="submit" class="btn-submit">Mulai Import</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function openImportModal(url, title) {
+            document.getElementById('import_url').value = url;
+            document.getElementById('import_title').value = title;
+            document.getElementById('importModal').style.display = 'flex';
+            
+            // Load Categories if empty
+            var select = document.getElementById('import_category_id');
+            if (select.options.length <= 1) {
+                fetch('https://maktabah.quizb.my.id/api.php?action=categories')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && Array.isArray(data)) {
+                            // Reset options first
+                            select.innerHTML = '<option value="0">-- Pilih Kategori --</option>';
+                            
+                            // Recursive function to add options
+                            function appendCategories(categories, prefix = '') {
+                                categories.forEach(cat => {
+                                    var opt = document.createElement('option');
+                                    opt.value = cat.id;
+                                    opt.textContent = prefix + cat.name;
+                                    select.appendChild(opt);
+                                    if (cat.children && cat.children.length > 0) {
+                                        appendCategories(cat.children, prefix + '-- ');
+                                    }
+                                });
+                            }
+                            
+                            appendCategories(data);
+                        }
+                    })
+                    .catch(err => console.error('Error fetching categories:', err));
+            }
+        }
+        
+        function closeImportModal() {
+            document.getElementById('importModal').style.display = 'none';
+        }
+    </script>
 </body>
 </html>
