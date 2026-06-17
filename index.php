@@ -5,6 +5,28 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 $message = '';
 $extractedLinks = [];
 
+// Ambil Kategori Langsung dari Database Maktabah
+$maktabahCategories = [];
+try {
+    $dbConfigPath = __DIR__ . '/../maktabah.quizb.my.id/app/Config/Database.php';
+    if (file_exists($dbConfigPath)) {
+        require_once $dbConfigPath;
+        $pdo = \App\Config\Database::getConnection();
+        $stmt = $pdo->query("SELECT id, name, level FROM categories ORDER BY catord ASC, name ASC");
+        $allCats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        foreach ($allCats as $cat) {
+            $prefix = str_repeat('-- ', (int)$cat['level']);
+            $maktabahCategories[] = [
+                'id' => $cat['id'],
+                'name' => $prefix . $cat['name']
+            ];
+        }
+    }
+} catch (Exception $e) {
+    // Abaikan jika error
+}
+
 // Fungsi bantuan untuk Absolute URL
 function resolveUrl($baseUrl, $relativeUrl) {
     if (parse_url($relativeUrl, PHP_URL_SCHEME) != '') return $relativeUrl;
@@ -408,7 +430,15 @@ if (!empty($_GET['url'])) {
                             <?php endif; ?>
                             
                             <?php if(!$item['is_category']): ?>
-                                <button type="button" onclick="openImportModal('<?= htmlspecialchars(addslashes($item['url'])) ?>', '<?= htmlspecialchars(addslashes($item['title'])) ?>')" class="badge badge-import" style="border:none; cursor:pointer;">Import ke Maktabah</button>
+                                <?php 
+                                    $domain = parse_url($item['url'], PHP_URL_HOST);
+                                    if ($domain) {
+                                        $domain = preg_replace('/^www\./', '', $domain);
+                                    } else {
+                                        $domain = 'WebDownloader';
+                                    }
+                                ?>
+                                <button type="button" onclick="openImportModal('<?= htmlspecialchars(addslashes($item['url'])) ?>', '<?= htmlspecialchars(addslashes($item['title'])) ?>', '<?= htmlspecialchars(addslashes($domain)) ?>')" class="badge badge-import" style="border:none; cursor:pointer;">Import ke Maktabah</button>
                                 <a href="?download=<?= urlencode($item['url']) ?>" class="badge badge-download" target="_blank">Unduh DOCX</a>
                             <?php endif; ?>
                         </div>
@@ -439,6 +469,9 @@ if (!empty($_GET['url'])) {
                     <label for="import_category_id">Kategori</label>
                     <select name="import_category_id" id="import_category_id">
                         <option value="0">-- Pilih Kategori --</option>
+                        <?php foreach ($maktabahCategories as $cat): ?>
+                            <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 
@@ -451,39 +484,11 @@ if (!empty($_GET['url'])) {
     </div>
 
     <script>
-        function openImportModal(url, title) {
+        function openImportModal(url, title, author) {
             document.getElementById('import_url').value = url;
             document.getElementById('import_title').value = title;
+            document.getElementById('import_author').value = author;
             document.getElementById('importModal').style.display = 'flex';
-            
-            // Load Categories if empty
-            var select = document.getElementById('import_category_id');
-            if (select.options.length <= 1) {
-                fetch('https://maktabah.quizb.my.id/api.php?action=categories')
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data && Array.isArray(data)) {
-                            // Reset options first
-                            select.innerHTML = '<option value="0">-- Pilih Kategori --</option>';
-                            
-                            // Recursive function to add options
-                            function appendCategories(categories, prefix = '') {
-                                categories.forEach(cat => {
-                                    var opt = document.createElement('option');
-                                    opt.value = cat.id;
-                                    opt.textContent = prefix + cat.name;
-                                    select.appendChild(opt);
-                                    if (cat.children && cat.children.length > 0) {
-                                        appendCategories(cat.children, prefix + '-- ');
-                                    }
-                                });
-                            }
-                            
-                            appendCategories(data);
-                        }
-                    })
-                    .catch(err => console.error('Error fetching categories:', err));
-            }
         }
         
         function closeImportModal() {
