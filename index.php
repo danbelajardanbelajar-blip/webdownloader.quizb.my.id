@@ -12,11 +12,12 @@ try {
     if (file_exists($dbConfigPath)) {
         require_once $dbConfigPath;
         $pdo = \App\Config\Database::getConnection();
-        $stmt = $pdo->query("SELECT id, name, level FROM categories ORDER BY catord ASC, name ASC");
+        $stmt = $pdo->query("SELECT * FROM categories ORDER BY catord ASC, name ASC");
         $allCats = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         foreach ($allCats as $cat) {
-            $prefix = str_repeat('-- ', (int)$cat['level']);
+            $lvl = isset($cat['lvl']) ? (int)$cat['lvl'] : (isset($cat['level']) ? (int)$cat['level'] : 0);
+            $prefix = str_repeat('-- ', $lvl);
             $maktabahCategories[] = [
                 'id' => $cat['id'],
                 'name' => $prefix . $cat['name']
