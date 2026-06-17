@@ -140,6 +140,118 @@ if (!empty($_GET['download'])) {
 }
 
 // ---------------------------------------------------------
+// FASE 3: PROSES IMPORT KE MAKTABAH
+// ---------------------------------------------------------
+if (!empty($_GET['import'])) {
+    $url = filter_var($_GET['import'], FILTER_SANITIZE_URL);
+    $html = @file_get_contents($url);
+    
+    if ($html) {
+        $dom = new DOMDocument();
+        libxml_use_internal_errors(true);
+        @$dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
+        libxml_clear_errors();
+        
+        $xpath = new DOMXPath($dom);
+
+        $h1ContentBoxNodes = $xpath->query('//div[contains(@class, "content_box")]//h1');
+        $documentTitle = '';
+
+        if ($h1ContentBoxNodes->length > 0) {
+            $documentTitle = trim(strip_tags($h1ContentBoxNodes->item(0)->nodeValue));
+        }
+
+        if (empty($documentTitle)) {
+            $fallbackNodes = $xpath->query('//h1 | //h2 | //title');
+            $documentTitle = $fallbackNodes->length > 0 ? trim(strip_tags($fallbackNodes->item(0)->nodeValue)) : 'Artikel Unduhan ' . time();
+        }
+
+        $rawText = '';
+        $contentBoxNodes = $xpath->query('//div[contains(@class, "content_box")]');
+
+        if ($contentBoxNodes->length > 0) {
+            foreach ($contentBoxNodes as $boxNode) {
+                $rawText .= extractTextWithNewlines($boxNode) . "\n\n";
+            }
+        }
+        
+        $lines = explode("\n", $rawText);
+        $cleanLines = [];
+        foreach ($lines as $line) {
+            $cleanLine = trim(html_entity_decode($line, ENT_QUOTES, 'UTF-8'));
+            if (!empty($cleanLine) && strlen($cleanLine) > 5) {
+                if (stripos($cleanLine, 'Share this') === false && stripos($cleanLine, 'Related Post') === false && stripos($cleanLine, 'Kirimkan Ini lewat Email') === false) {
+                    $cleanLines[] = $cleanLine;
+                }
+            }
+        }
+        
+        $finalText = implode("\n\n", $cleanLines);
+        
+        if (!empty($finalText)) {
+            // Pecah per halaman (3000 chars)
+            $pages = [];
+            $paragraphs = preg_split('/\n{2,}/', trim($finalText));
+            $buf = '';
+            foreach ($paragraphs as $para) {
+                $para = trim($para);
+                if ($para === '') continue;
+                if (strlen($buf) + strlen($para) > 3000 && $buf !== '') {
+                    $pages[] = trim($buf);
+                    $buf = $para;
+                } else {
+                    $buf .= ($buf ? "\n\n" : '') . $para;
+                }
+            }
+            if ($buf !== '') $pages[] = trim($buf);
+            
+            if (!empty($pages)) {
+                $apiUrl = 'https://maktabah.quizb.my.id/api.php?action=admin_import_book';
+                $payload = [
+                    'title' => $documentTitle,
+                    'author' => 'WebDownloader',
+                    'category_id' => 0,
+                    'iso' => 'ar',
+                    'pages' => $pages
+                ];
+                
+                $ch = curl_init($apiUrl);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+                curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                    'Content-Type: application/json'
+                ]);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+                
+                $response = curl_exec($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+                
+                if ($httpCode >= 200 && $httpCode < 300) {
+                    $resData = json_decode($response, true);
+                    if (!empty($resData['success'])) {
+                        $message = "Berhasil import \"{$documentTitle}\" ke Maktabah. ID Kitab: {$resData['bkid']}, Total Halaman: {$resData['pages']}.";
+                    } else {
+                        $message = "Gagal import: " . ($resData['error'] ?? 'Unknown error.');
+                    }
+                } else {
+                    $message = "Gagal terhubung ke API Maktabah. HTTP Code: {$httpCode}. Response: {$response}";
+                }
+            } else {
+                $message = "Gagal: Teks hasil pembersihan kosong.";
+            }
+        } else {
+            $message = "Gagal: Tidak dapat menemukan isi teks di dalam <div class=\"content_box\">.";
+        }
+    } else {
+        $message = "Gagal mengakses URL postingan tersebut.";
+    }
+}
+
+// ---------------------------------------------------------
 // FASE 1: BROWSER / SCRAPER (Mengekstrak Link Direktori)
 // ---------------------------------------------------------
 if (!empty($_GET['url'])) {
@@ -238,6 +350,8 @@ if (!empty($_GET['url'])) {
         .badge-explore:hover { background: #d97706; }
         .badge-download { background: #10b981; color: white; }
         .badge-download:hover { background: #059669; }
+        .badge-import { background: #8b5cf6; color: white; }
+        .badge-import:hover { background: #7c3aed; }
         .category-text { color: #f59e0b; }
         .post-text { color: #10b981; }
     </style>
@@ -281,6 +395,7 @@ if (!empty($_GET['url'])) {
                             <?php endif; ?>
                             
                             <?php if(!$item['is_category']): ?>
+                                <a href="?import=<?= urlencode($item['url']) ?>" class="badge badge-import">Import ke Maktabah</a>
                                 <a href="?download=<?= urlencode($item['url']) ?>" class="badge badge-download" target="_blank">Unduh DOCX</a>
                             <?php endif; ?>
                         </div>
